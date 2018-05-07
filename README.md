@@ -7,6 +7,6 @@ Install:
 
 `source venv/bin/activate`
 
-`pip install -r < requirements.txt`
+`pip install -r requirements.txt`
 
 Edit the py and add your AD details
