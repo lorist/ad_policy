@@ -1,0 +1,13 @@
+# HTTPS server
+#
+server {
+        listen 80;
+        server_name portal.pextest.com 10.63.225.33;
+
+	 location / {
+             include uwsgi_params;
+             uwsgi_pass unix:///home/pexip/ad_policy/ad_policy.sock;
+             access_log /var/log/nginx/ad_policy.access.log;
+             error_log /var/log/nginx/ad_policy.error.log;
+    }
+}
