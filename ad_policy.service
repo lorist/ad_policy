@@ -1,0 +1,13 @@
+[Unit]
+Description=uWSGI instance to serve ad_policy
+After=network.target
+
+[Service]
+User=pexip
+Group=www-data
+WorkingDirectory=/home/pexip/ad_policy
+Environment="PATH=/home/pexip/ad_policy/venv/bin"
+ExecStart=/home/pexip/ad_policy/venv/bin/uwsgi --ini ad_policy.ini
+
+[Install]
+WantedBy=multi-user.target
