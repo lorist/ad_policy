@@ -10,3 +10,9 @@ Install:
 `pip install -r requirements.txt`
 
 Edit the py and add your AD details
+
+# ad_policy service
+
+sudo cp ~/ad_policy/ad_policy.service /etc/systemd/system/
+
+
