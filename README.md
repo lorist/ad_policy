@@ -18,7 +18,8 @@ sudo cp ~/ad_policy/ad_policy.service /etc/systemd/system/
 # nginx
 
 `sudo cp ~/ad_policy/ad_policy.nginx /etc/nginx/sites-available/`
-`sudo ln -s /etc/nginx/sites-available/ad_policy.nginx /etc/nginx/sites-enabled'
+
+`sudo ln -s /etc/nginx/sites-available/ad_policy.nginx /etc/nginx/sites-enabled`
 
 
 
