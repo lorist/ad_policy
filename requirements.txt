@@ -5,5 +5,7 @@ Jinja2==2.10
 ldap3==2.4.1
 MarkupSafe==1.0
 Pillow==5.1.0
+pkg-resources==0.0.0
 pyasn1==0.4.2
+uWSGI==2.0.17
 Werkzeug==0.14.1
