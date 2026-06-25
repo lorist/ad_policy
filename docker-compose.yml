@@ -1,0 +1,14 @@
+services:
+  ad_policy:
+    build: .
+    image: ad_policy:latest
+    container_name: ad_policy
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - LOG_FILE=/app/logs/pexavatar.log
+    volumes:
+      - ./logs:/app/logs

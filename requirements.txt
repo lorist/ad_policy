@@ -1,11 +1,5 @@
-click==6.7
-Flask==0.12.3
-itsdangerous==0.24
-Jinja2=2.10.1
-ldap3==2.4.1
-MarkupSafe==1.0
-Pillow==5.1.0
-pkg-resources==0.0.0
-pyasn1==0.4.2
-uWSGI==2.0.17
-Werkzeug==0.14.1
+Flask==3.0.3
+ldap3==2.9.1
+Pillow==10.4.0
+python-dotenv==1.0.1
+gunicorn==22.0.0
