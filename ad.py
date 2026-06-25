@@ -2,6 +2,8 @@
 import os
 import ssl
 import re
+import time
+import socket
 import base64
 import logging
 from io import BytesIO
@@ -75,6 +77,63 @@ def api_search(participant):
     else:
         img_data = generate_image(participant, image_height, image_width, thumbnailPhoto)
         return Response(img_data, mimetype='image/jpeg')
+
+
+@app.route('/healthz/ldap')
+def healthz_ldap():
+    """Connectivity probe for the LDAP host. Tests a raw TCP connect and, when
+    LDAPS is enabled, a TLS handshake — but never binds, so no credentials are
+    sent. Lets you tell reachability vs TLS vs auth apart when debugging.
+
+    Returns 200 when every attempted stage succeeds, 503 otherwise."""
+    timeout = float(os.getenv("LDAP_HEALTH_TIMEOUT", "5"))
+    result = {
+        "host": LDAP_HOST,
+        "port": LDAP_PORT,
+        "use_ssl": LDAP_USE_SSL,
+        "tcp": "unknown",
+        "tls": "skipped",
+    }
+
+    # Stage 1: raw TCP connect.
+    start = time.perf_counter()
+    try:
+        sock = socket.create_connection((LDAP_HOST, LDAP_PORT), timeout=timeout)
+    except OSError as e:
+        result["tcp"] = "error"
+        result["error"] = "{}: {}".format(type(e).__name__, e)
+        logger.warning("LDAP health: TCP connect to %s:%s failed: %s", LDAP_HOST, LDAP_PORT, e)
+        return Response(json.dumps(result), status=503, mimetype="application/json")
+
+    result["tcp"] = "ok"
+    result["tcp_ms"] = round((time.perf_counter() - start) * 1000)
+
+    try:
+        # Stage 2: TLS handshake (LDAPS only). Validation is intentionally off —
+        # we only want to know whether TLS negotiates, matching how the app binds.
+        if LDAP_USE_SSL:
+            tls_start = time.perf_counter()
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            try:
+                tls_sock = ctx.wrap_socket(sock, server_hostname=LDAP_HOST)
+            except (ssl.SSLError, OSError) as e:
+                result["tls"] = "error"
+                result["error"] = "{}: {}".format(type(e).__name__, e)
+                logger.warning("LDAP health: TLS handshake to %s failed: %s", LDAP_HOST, e)
+                return Response(json.dumps(result), status=503, mimetype="application/json")
+            try:
+                result["tls"] = "ok"
+                result["tls_ms"] = round((time.perf_counter() - tls_start) * 1000)
+                result["peer_cert_present"] = bool(tls_sock.getpeercert(binary_form=True))
+            finally:
+                tls_sock.close()
+    finally:
+        sock.close()
+
+    logger.info("LDAP health check OK: %s", result)
+    return Response(json.dumps(result), status=200, mimetype="application/json")
 
 
 def find_ad_users(participant):
