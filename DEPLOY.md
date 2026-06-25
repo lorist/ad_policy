@@ -45,12 +45,12 @@ SUB=$(az account show --query id -o tsv)
 ### 2. Build and deploy
 
 ```bash
-# Variables
-RG=ad-policy-rg
-LOC=australiaeast
-ACR=adpolicyacr$RANDOM          # must be globally unique, lowercase
-PLAN=ad-policy-plan
-APP=ad-policy-avatar            # becomes ad-policy-avatar.azurewebsites.net
+# Variables — replace with your own values
+RG=<resource-group>
+LOC=<azure-region>             # e.g. australiaeast
+ACR=myacr$RANDOM              # must be globally unique, lowercase
+PLAN=<app-service-plan>
+APP=<app-name>                 # becomes <app-name>.azurewebsites.net
 
 # Resource group + container registry
 az group create -n $RG -l $LOC
@@ -101,7 +101,7 @@ az webapp config appsettings set -n $APP -g $RG --settings \
 ### 4. Verify
 
 ```
-https://ad-policy-avatar.azurewebsites.net/policy/v1/participant/avatar/dennis?width=200&height=200
+https://<app-name>.azurewebsites.net/policy/v1/participant/avatar/<display-name>?width=200&height=200
 ```
 
 Tail logs with `az webapp log tail -n $APP -g $RG`.
