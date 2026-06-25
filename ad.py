@@ -176,7 +176,10 @@ def searchFilter(participant):
     elif re.match(r'^(\w+)', participant) is not None:
         logger.info('matched name')
         search = participant
-        search_filter = "(displayName={0}*)"
+        # A bare token may be a display name ("walter kurtz"), a sAMAccountName
+        # ("walter.kurtz"), or a userPrincipalName prefix — match any of them so
+        # both Pexip's display-name requests and username lookups resolve.
+        search_filter = "(|(sAMAccountName={0})(userPrincipalName={0}*)(displayName={0}*))"
         return search, search_filter
     else:
         return "415 Unsupported Media Type ;)"
