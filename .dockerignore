@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+*.log
+__pycache__/
+*.pyc
+venv/
+logs/
+README.md
+_config.yml
+ad_policy.ini
+ad_policy.nginx
+ad_policy.service
