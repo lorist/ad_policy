@@ -59,8 +59,6 @@ tls_configuration = Tls(
 RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
 
 logger.info('Starting pexavatar')
-# ldapsearch -v -h dc01-syd.pexip.local -D 'ldapsearch@pexip.local' -W -b DC=pexip,DC=local '(sAMAccountName=dennis)' 
-# ldapsearch -v -h dc01-syd.pexip.local -D 'ldapsearch@pexip.local' -W -b DC=pexip,DC=local '(telephoneNumber=+61410480004)' 
 
 @app.route('/policy/v1/participant/avatar/<participant>')
 def api_search(participant):
