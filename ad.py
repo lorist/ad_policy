@@ -17,11 +17,28 @@ app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pexavatar")
-handler = logging.FileHandler(os.getenv("LOG_FILE", "pexavatar.log"))
-handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+
+# Always log to stdout so logs show up in container / Azure log streams.
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+# Optionally also log to a file when LOG_FILE is set. Never let a missing or
+# unwritable directory crash startup (e.g. an unmounted path in a container).
+log_file = os.getenv("LOG_FILE")
+if log_file:
+    try:
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except OSError as e:
+        logger.warning("Could not open log file %r, logging to stdout only: %s", log_file, e)
 
 OBJECT_CLASS = ['top', 'person', 'organizationalPerson', 'user']
 LDAP_HOST = os.getenv("LDAP_HOST", "your_ad_server.com")

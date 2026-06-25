@@ -89,9 +89,14 @@ az webapp config appsettings set -n $APP -g $RG --settings \
   LDAP_BASE_DN='OU=People,DC=custom,DC=com' \
   LDAP_PORT=636 \
   LDAP_USE_SSL=true \
-  LDAP_VALIDATE_CERT=false \
-  LOG_FILE=/home/LogFiles/pexavatar.log
+  LDAP_VALIDATE_CERT=false
 ```
+
+> **Do not** set `LOG_FILE` to a path like `/home/LogFiles/...`. That directory
+> does not exist inside a custom container unless you also enable persistent
+> storage (`WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`), and pointing the app at a
+> missing directory crashes it on startup (gunicorn exit code 3). Leave `LOG_FILE`
+> unset — the app logs to stdout, which Azure captures in the log stream.
 
 ### 4. Verify
 
@@ -117,6 +122,8 @@ az webapp restart -n $APP -g $RG
   or you add [VNet integration](https://learn.microsoft.com/azure/app-service/overview-vnet-integration)
   plus a VPN/ExpressRoute to the network where AD lives. This is the most likely
   thing to break in a private/on-prem AD setup.
-- **Logging.** `LOG_FILE` is pointed at `/home/LogFiles/` above so logs persist
-  across restarts and appear in the log stream. A path under `/app` would be wiped
-  on every restart/redeploy.
+- **Logging.** The app logs to stdout, so logs appear in `az webapp log tail` and
+  the portal Log stream with no extra config. If you want a persistent log file as
+  well, enable `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` and then set
+  `LOG_FILE=/home/LogFiles/pexavatar.log` — only with storage enabled does that
+  directory exist.
