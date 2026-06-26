@@ -6,11 +6,14 @@ import time
 import socket
 import base64
 import logging
+import hashlib
+import threading
 from io import BytesIO
 
 from dotenv import load_dotenv
 from flask import Flask, json, request, Response, abort
-from ldap3 import Server, Connection, SUBTREE, ALL_ATTRIBUTES, Tls
+from ldap3 import Server, Connection, SUBTREE, Tls
+from ldap3.utils.conv import escape_filter_chars
 from PIL import Image, ImageOps
 
 load_dotenv()
@@ -55,21 +58,92 @@ tls_configuration = Tls(
     validate=ssl.CERT_REQUIRED if LDAP_VALIDATE_CERT else ssl.CERT_NONE,
 )
 
+# Participant identities (names, emails, phone numbers) are personal data. By
+# default they are redacted in logs to a short stable hash, which still lets you
+# correlate the log lines for one request without recording who it was. Set
+# LOG_PII=true to log the raw identity (e.g. when actively debugging).
+LOG_PII = os.getenv("LOG_PII", "false").lower() in ("1", "true", "yes")
+
+
+def redact(value):
+    """Return value unchanged when LOG_PII is enabled, otherwise a short stable
+    hash prefixed with 'id:' so requests stay correlatable but anonymous."""
+    if LOG_PII:
+        return value
+    return "id:" + hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:10]
+
 # Pillow 10 removed Image.ANTIALIAS in favour of Image.Resampling.LANCZOS
 RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
 
+# Bounds for the requested avatar size. Pexip asks for small avatars; clamping
+# stops a request like ?width=999999 from making Pillow allocate a huge buffer.
+DEFAULT_DIMENSION = int(os.getenv("AVATAR_DEFAULT_DIMENSION", "300"))
+MAX_DIMENSION = int(os.getenv("AVATAR_MAX_DIMENSION", "512"))
+
+
+def parse_dimension(raw):
+    """Parse a width/height query param into a clamped int in [1, MAX_DIMENSION].
+    Falls back to DEFAULT_DIMENSION when missing or not a valid integer."""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_DIMENSION
+    return max(1, min(value, MAX_DIMENSION))
+
+
+# Short-TTL cache of LDAP lookups keyed by participant, so Pexip re-requesting
+# the same avatar (or repeatedly missing on a photo-less user) doesn't trigger a
+# bind+search every time. Both hits and misses are cached. Set AVATAR_CACHE_TTL=0
+# to disable. The cache is per worker process, which is fine for this workload.
+AVATAR_CACHE_TTL = int(os.getenv("AVATAR_CACHE_TTL", "300"))
+_MISS = object()
+_cache = {}
+_cache_lock = threading.Lock()
+
+
+def cache_lookup(key):
+    """Return the cached value for key, or the _MISS sentinel if absent/expired.
+    A cached value may legitimately be None (a known-negative lookup), so callers
+    must compare against _MISS rather than testing truthiness."""
+    if AVATAR_CACHE_TTL <= 0:
+        return _MISS
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return _MISS
+        expiry, value = entry
+        if expiry < time.monotonic():
+            _cache.pop(key, None)
+            return _MISS
+        return value
+
+
+def cache_store(key, value):
+    if AVATAR_CACHE_TTL <= 0:
+        return
+    with _cache_lock:
+        _cache[key] = (time.monotonic() + AVATAR_CACHE_TTL, value)
+
 logger.info('Starting pexavatar')
+
+
+@app.route('/healthz')
+def healthz():
+    """Liveness probe: confirms the web server is up. Deliberately does not touch
+    LDAP — use /healthz/ldap for dependency/readiness checks — so a DC outage
+    doesn't make orchestrators kill an otherwise-healthy container."""
+    return Response('{"status": "ok"}', status=200, mimetype="application/json")
+
 
 @app.route('/policy/v1/participant/avatar/<participant>')
 def api_search(participant):
     detail = request.args
-    image_width = detail['width']
-    image_height = detail['height']
-    logger.info('Received request from: %s', participant)
-    logger.info('Looking up LDAP for: %s', participant)
-    logger.info('Participant: %s wants an avatar of height: %s and width: %s.', participant, image_height, image_width)
+    image_width = parse_dimension(detail.get('width'))
+    image_height = parse_dimension(detail.get('height'))
+    who = redact(participant)
+    logger.info('Avatar request for %s (height: %s, width: %s)', who, image_height, image_width)
     thumbnailPhoto = find_ad_users(participant)
-    if thumbnailPhoto == 'error':
+    if thumbnailPhoto is None:
         logger.info('nothing found')
         abort(404)
     else:
@@ -135,34 +209,42 @@ def healthz_ldap():
 
 
 def find_ad_users(participant):
-    try:
-        search, search_filter = searchFilter(participant)
-    except Exception:
-        abort(404)
+    cached = cache_lookup(participant)
+    if cached is not _MISS:
+        logger.info('Cache hit for %s', redact(participant))
+        return cached
 
-    logger.info('Search: %s, filter: %s', search, search_filter)
+    match = searchFilter(participant)
+    if match is None:
+        abort(404)
+    search, search_filter = match
+
+    logger.info('Search: %s, filter: %s', redact(search), search_filter)
     with ldap_connection() as c:
         try:
             c.search(search_base=LDAP_BASE_DN,
-                     search_filter=search_filter.format(search),
+                     search_filter=search_filter.format(escape_filter_chars(search)),
                      search_scope=SUBTREE,
-                     attributes=ALL_ATTRIBUTES,
-                     get_operational_attributes=True)
+                     attributes=['thumbnailPhoto'])
             ad = json.loads(c.response_to_json())
 
             thumbnailPhoto = ad['entries'][0]['attributes']['thumbnailPhoto']['encoded']
             logger.debug('thumbnailPhoto: %s', thumbnailPhoto)
+            cache_store(participant, thumbnailPhoto)
             return thumbnailPhoto
 
         except Exception:
-            return 'error'
+            cache_store(participant, None)
+            return None
 
 
 def searchFilter(participant):
     logger.debug('finding search filter type')
     if re.match(r'^[\w_a-z0-9-]+@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})$', participant) is not None:
         logger.info('matched email')
-        search = re.sub(r'\s%40\s', '@', participant)
+        # Flask URL-decodes the path segment, so a `%40` in the request already
+        # arrives here as `@` and matches the email pattern directly.
+        search = participant
         search_filter = "(mail={0}*)"
         return search, search_filter
     elif re.match(r'^(\+)?\d+(\@.+)?$', participant) is not None:
@@ -180,7 +262,10 @@ def searchFilter(participant):
         search_filter = "(|(sAMAccountName={0})(userPrincipalName={0}*)(displayName={0}*))"
         return search, search_filter
     else:
-        return "415 Unsupported Media Type ;)"
+        # No supported pattern (e.g. input starting with a non-word character).
+        # Signal "unsupported" to the caller, which turns it into a 404.
+        logger.info('no supported lookup pattern for %s', redact(participant))
+        return None
 
 
 def generate_image(participant, image_height, image_width, thumbnailPhoto, avatar=None):
@@ -192,7 +277,7 @@ def generate_image(participant, image_height, image_width, thumbnailPhoto, avata
         img_io = BytesIO()
         avatar_res.convert("RGB").save(img_io, "JPEG", quality=90)
         img_data = img_io.getvalue()
-        logger.info("Created participant avatar for {!r}".format(participant))
+        logger.info("Created participant avatar for %s", redact(participant))
         return img_data
 
     except Exception as e:

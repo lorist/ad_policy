@@ -112,8 +112,23 @@ After code changes, rebuild the image and restart:
 
 ```bash
 az acr build -r $ACR -t ad_policy:latest .
+
+# Force App Service to re-pull the image. Because the tag stays `latest`, a bare
+# `az webapp restart` often reuses the cached image and your changes don't ship.
+# Re-setting the container config guarantees a fresh pull.
+az webapp config container set -n $APP -g $RG \
+  --docker-custom-image-name $ACR.azurecr.io/ad_policy:latest \
+  --docker-registry-server-url https://$ACR.azurecr.io
+
 az webapp restart -n $APP -g $RG
 ```
+
+> **Confirm the new image is actually live.** With a reused `latest` tag it's
+> easy to think you redeployed when you didn't. Tail the logs
+> (`az webapp log tail -n $APP -g $RG`) and check `/healthz` responds, or
+> compare the running behaviour against your change. Alternatively, build with a
+> unique tag per release (e.g. `-t ad_policy:$(git rev-parse --short HEAD)`) and
+> point the container config at that tag to sidestep cache ambiguity entirely.
 
 ### Notes for this app
 
