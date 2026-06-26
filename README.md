@@ -49,6 +49,16 @@ gunicorn --bind 0.0.0.0:5000 wsgi:app
 
 For development you can also run `python ad.py` directly.
 
+## Tests
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests cover input classification, avatar-size clamping, and LDAP filter
+escaping, and do not require a live AD.
+
 
 
 
