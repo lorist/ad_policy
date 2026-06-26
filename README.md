@@ -24,6 +24,10 @@ cp .env.example .env
 | `LDAP_USE_SSL`       | Use LDAPS                        | `true`                       |
 | `LDAP_VALIDATE_CERT` | Validate the server certificate | `false`                      |
 | `LOG_FILE`           | Log file path                   | `pexavatar.log`              |
+| `LOG_PII`            | Log raw participant identities (else hashed) | `false`         |
+| `AVATAR_CACHE_TTL`   | Lookup cache TTL in seconds (`0` disables) | `300`             |
+| `AVATAR_MAX_DIMENSION` | Max avatar width/height         | `512`                      |
+| `AVATAR_DEFAULT_DIMENSION` | Default width/height when unset | `300`                |
 
 ## Run with Docker (recommended)
 

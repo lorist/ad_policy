@@ -6,6 +6,7 @@ import time
 import socket
 import base64
 import logging
+import hashlib
 import threading
 from io import BytesIO
 
@@ -56,6 +57,20 @@ LDAP_VALIDATE_CERT = os.getenv("LDAP_VALIDATE_CERT", "false").lower() in ("1", "
 tls_configuration = Tls(
     validate=ssl.CERT_REQUIRED if LDAP_VALIDATE_CERT else ssl.CERT_NONE,
 )
+
+# Participant identities (names, emails, phone numbers) are personal data. By
+# default they are redacted in logs to a short stable hash, which still lets you
+# correlate the log lines for one request without recording who it was. Set
+# LOG_PII=true to log the raw identity (e.g. when actively debugging).
+LOG_PII = os.getenv("LOG_PII", "false").lower() in ("1", "true", "yes")
+
+
+def redact(value):
+    """Return value unchanged when LOG_PII is enabled, otherwise a short stable
+    hash prefixed with 'id:' so requests stay correlatable but anonymous."""
+    if LOG_PII:
+        return value
+    return "id:" + hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:10]
 
 # Pillow 10 removed Image.ANTIALIAS in favour of Image.Resampling.LANCZOS
 RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
@@ -125,9 +140,8 @@ def api_search(participant):
     detail = request.args
     image_width = parse_dimension(detail.get('width'))
     image_height = parse_dimension(detail.get('height'))
-    logger.info('Received request from: %s', participant)
-    logger.info('Looking up LDAP for: %s', participant)
-    logger.info('Participant: %s wants an avatar of height: %s and width: %s.', participant, image_height, image_width)
+    who = redact(participant)
+    logger.info('Avatar request for %s (height: %s, width: %s)', who, image_height, image_width)
     thumbnailPhoto = find_ad_users(participant)
     if thumbnailPhoto is None:
         logger.info('nothing found')
@@ -197,7 +211,7 @@ def healthz_ldap():
 def find_ad_users(participant):
     cached = cache_lookup(participant)
     if cached is not _MISS:
-        logger.info('Cache hit for %s', participant)
+        logger.info('Cache hit for %s', redact(participant))
         return cached
 
     match = searchFilter(participant)
@@ -205,7 +219,7 @@ def find_ad_users(participant):
         abort(404)
     search, search_filter = match
 
-    logger.info('Search: %s, filter: %s', search, search_filter)
+    logger.info('Search: %s, filter: %s', redact(search), search_filter)
     with ldap_connection() as c:
         try:
             c.search(search_base=LDAP_BASE_DN,
@@ -250,7 +264,7 @@ def searchFilter(participant):
     else:
         # No supported pattern (e.g. input starting with a non-word character).
         # Signal "unsupported" to the caller, which turns it into a 404.
-        logger.info('no supported lookup pattern for %r', participant)
+        logger.info('no supported lookup pattern for %s', redact(participant))
         return None
 
 
@@ -263,7 +277,7 @@ def generate_image(participant, image_height, image_width, thumbnailPhoto, avata
         img_io = BytesIO()
         avatar_res.convert("RGB").save(img_io, "JPEG", quality=90)
         img_data = img_io.getvalue()
-        logger.info("Created participant avatar for {!r}".format(participant))
+        logger.info("Created participant avatar for %s", redact(participant))
         return img_data
 
     except Exception as e:

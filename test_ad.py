@@ -80,3 +80,21 @@ def test_escaped_name_filter_has_no_raw_wildcard_from_input():
 ])
 def test_parse_dimension(raw, expected):
     assert ad.parse_dimension(raw) == expected
+
+
+# --- redact: PII handling in logs -----------------------------------------
+
+def test_redact_hides_identity_by_default(monkeypatch):
+    monkeypatch.setattr(ad, "LOG_PII", False)
+    out = ad.redact("walter@example.com")
+    assert out.startswith("id:")
+    assert "walter" not in out
+    # stable for the same input
+    assert out == ad.redact("walter@example.com")
+    # distinct inputs hash differently
+    assert out != ad.redact("kurtz@example.com")
+
+
+def test_redact_passthrough_when_enabled(monkeypatch):
+    monkeypatch.setattr(ad, "LOG_PII", True)
+    assert ad.redact("walter@example.com") == "walter@example.com"
