@@ -85,7 +85,7 @@ def api_search(participant):
     logger.info('Looking up LDAP for: %s', participant)
     logger.info('Participant: %s wants an avatar of height: %s and width: %s.', participant, image_height, image_width)
     thumbnailPhoto = find_ad_users(participant)
-    if thumbnailPhoto == 'error':
+    if thumbnailPhoto is None:
         logger.info('nothing found')
         abort(404)
     else:
@@ -151,10 +151,10 @@ def healthz_ldap():
 
 
 def find_ad_users(participant):
-    try:
-        search, search_filter = searchFilter(participant)
-    except Exception:
+    match = searchFilter(participant)
+    if match is None:
         abort(404)
+    search, search_filter = match
 
     logger.info('Search: %s, filter: %s', search, search_filter)
     with ldap_connection() as c:
@@ -171,14 +171,16 @@ def find_ad_users(participant):
             return thumbnailPhoto
 
         except Exception:
-            return 'error'
+            return None
 
 
 def searchFilter(participant):
     logger.debug('finding search filter type')
     if re.match(r'^[\w_a-z0-9-]+@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})$', participant) is not None:
         logger.info('matched email')
-        search = re.sub(r'\s%40\s', '@', participant)
+        # Flask URL-decodes the path segment, so a `%40` in the request already
+        # arrives here as `@` and matches the email pattern directly.
+        search = participant
         search_filter = "(mail={0}*)"
         return search, search_filter
     elif re.match(r'^(\+)?\d+(\@.+)?$', participant) is not None:
@@ -196,7 +198,10 @@ def searchFilter(participant):
         search_filter = "(|(sAMAccountName={0})(userPrincipalName={0}*)(displayName={0}*))"
         return search, search_filter
     else:
-        return "415 Unsupported Media Type ;)"
+        # No supported pattern (e.g. input starting with a non-word character).
+        # Signal "unsupported" to the caller, which turns it into a 404.
+        logger.info('no supported lookup pattern for %r', participant)
+        return None
 
 
 def generate_image(participant, image_height, image_width, thumbnailPhoto, avatar=None):
