@@ -111,6 +111,15 @@ def cache_store(key, value):
 
 logger.info('Starting pexavatar')
 
+
+@app.route('/healthz')
+def healthz():
+    """Liveness probe: confirms the web server is up. Deliberately does not touch
+    LDAP — use /healthz/ldap for dependency/readiness checks — so a DC outage
+    doesn't make orchestrators kill an otherwise-healthy container."""
+    return Response('{"status": "ok"}', status=200, mimetype="application/json")
+
+
 @app.route('/policy/v1/participant/avatar/<participant>')
 def api_search(participant):
     detail = request.args
