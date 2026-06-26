@@ -11,6 +11,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 from flask import Flask, json, request, Response, abort
 from ldap3 import Server, Connection, SUBTREE, ALL_ATTRIBUTES, Tls
+from ldap3.utils.conv import escape_filter_chars
 from PIL import Image, ImageOps
 
 load_dotenv()
@@ -58,13 +59,28 @@ tls_configuration = Tls(
 # Pillow 10 removed Image.ANTIALIAS in favour of Image.Resampling.LANCZOS
 RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
 
+# Bounds for the requested avatar size. Pexip asks for small avatars; clamping
+# stops a request like ?width=999999 from making Pillow allocate a huge buffer.
+DEFAULT_DIMENSION = int(os.getenv("AVATAR_DEFAULT_DIMENSION", "300"))
+MAX_DIMENSION = int(os.getenv("AVATAR_MAX_DIMENSION", "512"))
+
+
+def parse_dimension(raw):
+    """Parse a width/height query param into a clamped int in [1, MAX_DIMENSION].
+    Falls back to DEFAULT_DIMENSION when missing or not a valid integer."""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_DIMENSION
+    return max(1, min(value, MAX_DIMENSION))
+
 logger.info('Starting pexavatar')
 
 @app.route('/policy/v1/participant/avatar/<participant>')
 def api_search(participant):
     detail = request.args
-    image_width = detail['width']
-    image_height = detail['height']
+    image_width = parse_dimension(detail.get('width'))
+    image_height = parse_dimension(detail.get('height'))
     logger.info('Received request from: %s', participant)
     logger.info('Looking up LDAP for: %s', participant)
     logger.info('Participant: %s wants an avatar of height: %s and width: %s.', participant, image_height, image_width)
@@ -144,7 +160,7 @@ def find_ad_users(participant):
     with ldap_connection() as c:
         try:
             c.search(search_base=LDAP_BASE_DN,
-                     search_filter=search_filter.format(search),
+                     search_filter=search_filter.format(escape_filter_chars(search)),
                      search_scope=SUBTREE,
                      attributes=ALL_ATTRIBUTES,
                      get_operational_attributes=True)
