@@ -10,7 +10,7 @@ from io import BytesIO
 
 from dotenv import load_dotenv
 from flask import Flask, json, request, Response, abort
-from ldap3 import Server, Connection, SUBTREE, ALL_ATTRIBUTES, Tls
+from ldap3 import Server, Connection, SUBTREE, Tls
 from ldap3.utils.conv import escape_filter_chars
 from PIL import Image, ImageOps
 
@@ -162,8 +162,7 @@ def find_ad_users(participant):
             c.search(search_base=LDAP_BASE_DN,
                      search_filter=search_filter.format(escape_filter_chars(search)),
                      search_scope=SUBTREE,
-                     attributes=ALL_ATTRIBUTES,
-                     get_operational_attributes=True)
+                     attributes=['thumbnailPhoto'])
             ad = json.loads(c.response_to_json())
 
             thumbnailPhoto = ad['entries'][0]['attributes']['thumbnailPhoto']['encoded']
