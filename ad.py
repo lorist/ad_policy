@@ -6,6 +6,7 @@ import time
 import socket
 import base64
 import logging
+import threading
 from io import BytesIO
 
 from dotenv import load_dotenv
@@ -73,6 +74,40 @@ def parse_dimension(raw):
     except (TypeError, ValueError):
         return DEFAULT_DIMENSION
     return max(1, min(value, MAX_DIMENSION))
+
+
+# Short-TTL cache of LDAP lookups keyed by participant, so Pexip re-requesting
+# the same avatar (or repeatedly missing on a photo-less user) doesn't trigger a
+# bind+search every time. Both hits and misses are cached. Set AVATAR_CACHE_TTL=0
+# to disable. The cache is per worker process, which is fine for this workload.
+AVATAR_CACHE_TTL = int(os.getenv("AVATAR_CACHE_TTL", "300"))
+_MISS = object()
+_cache = {}
+_cache_lock = threading.Lock()
+
+
+def cache_lookup(key):
+    """Return the cached value for key, or the _MISS sentinel if absent/expired.
+    A cached value may legitimately be None (a known-negative lookup), so callers
+    must compare against _MISS rather than testing truthiness."""
+    if AVATAR_CACHE_TTL <= 0:
+        return _MISS
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return _MISS
+        expiry, value = entry
+        if expiry < time.monotonic():
+            _cache.pop(key, None)
+            return _MISS
+        return value
+
+
+def cache_store(key, value):
+    if AVATAR_CACHE_TTL <= 0:
+        return
+    with _cache_lock:
+        _cache[key] = (time.monotonic() + AVATAR_CACHE_TTL, value)
 
 logger.info('Starting pexavatar')
 
@@ -151,6 +186,11 @@ def healthz_ldap():
 
 
 def find_ad_users(participant):
+    cached = cache_lookup(participant)
+    if cached is not _MISS:
+        logger.info('Cache hit for %s', participant)
+        return cached
+
     match = searchFilter(participant)
     if match is None:
         abort(404)
@@ -167,9 +207,11 @@ def find_ad_users(participant):
 
             thumbnailPhoto = ad['entries'][0]['attributes']['thumbnailPhoto']['encoded']
             logger.debug('thumbnailPhoto: %s', thumbnailPhoto)
+            cache_store(participant, thumbnailPhoto)
             return thumbnailPhoto
 
         except Exception:
+            cache_store(participant, None)
             return None
 
 
