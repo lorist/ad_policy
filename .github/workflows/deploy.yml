@@ -28,9 +28,30 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  # Skip the deploy (run stays green) until the Azure OIDC secrets exist.
+  gate:
+    name: Check Azure credentials
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID are not all set. Add them to enable automatic deploys (see DEPLOY.md, CI/CD)."
+          fi
+
   deploy:
     name: Deploy to Azure App Service
-    needs: ci
+    needs: [ci, gate]
+    if: needs.gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production

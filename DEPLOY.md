@@ -162,6 +162,10 @@ improvement: the image is tagged with the short git SHA and baked in as
 `APP_VERSION`, so the workflow can prove the new build is the one serving
 traffic rather than a cached `latest`.
 
+Until the secrets below exist, the Deploy and Security workflows skip their
+work with a notice rather than failing, so CI stays green on a fresh fork or
+after a repo transfer. They start working as soon as the secrets are added.
+
 ### One-time setup
 
 **1. Let GitHub Actions log in to Azure with OIDC** (no stored password):
