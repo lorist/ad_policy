@@ -124,11 +124,13 @@ az webapp restart -n $APP -g $RG
 ```
 
 > **Confirm the new image is actually live.** With a reused `latest` tag it's
-> easy to think you redeployed when you didn't. Tail the logs
-> (`az webapp log tail -n $APP -g $RG`) and check `/healthz` responds, or
-> compare the running behaviour against your change. Alternatively, build with a
-> unique tag per release (e.g. `-t ad_policy:$(git rev-parse --short HEAD)`) and
-> point the container config at that tag to sidestep cache ambiguity entirely.
+> easy to think you redeployed when you didn't. `/healthz` reports the build's
+> `version` (the short git SHA passed as `--build-arg GIT_SHA=…`, `dev` when
+> unset), so `curl https://$APP.azurewebsites.net/healthz` tells you which build
+> is serving. Alternatively, build with a unique tag per release
+> (e.g. `-t ad_policy:$(git rev-parse --short HEAD)`) and point the container
+> config at that tag to sidestep cache ambiguity entirely — which is exactly what
+> the GitHub Actions deploy below does.
 
 ### Notes for this app
 
@@ -142,3 +144,69 @@ az webapp restart -n $APP -g $RG
   well, enable `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` and then set
   `LOG_FILE=/home/LogFiles/pexavatar.log` — only with storage enabled does that
   directory exist.
+
+## CI/CD (GitHub Actions)
+
+Three workflows live in `.github/workflows/`:
+
+| Workflow | Runs on | What it does |
+| --- | --- | --- |
+| `ci.yml` | every pull request | `pytest`, then builds the image and probes `/healthz` in a container |
+| `deploy.yml` | push to `master` (after CI) | `az acr build` tagged with the commit SHA, points the Web App at that tag, restarts, and waits until `/healthz` reports the new `version` |
+| `security.yml` | PRs, `master`, weekly | Snyk scans of `requirements.txt`, the source (Snyk Code) and the built image; results go to the repo's **Security → Code scanning** tab; `master` runs also `snyk monitor` |
+
+`dependabot.yml` opens weekly PRs for pip, the base image, and the actions.
+
+The deploy uses the same commands as the manual steps above, with one
+improvement: the image is tagged with the short git SHA and baked in as
+`APP_VERSION`, so the workflow can prove the new build is the one serving
+traffic rather than a cached `latest`.
+
+### One-time setup
+
+**1. Let GitHub Actions log in to Azure with OIDC** (no stored password):
+
+```bash
+SUB=$(az account show --query id -o tsv)
+TENANT=$(az account show --query tenantId -o tsv)
+RG=ad-policy-rg
+
+APP_ID=$(az ad app create --display-name ad-policy-github-deploy --query appId -o tsv)
+az ad sp create --id $APP_ID
+
+# Contributor on the resource group covers the Web App and the ACR (if the ACR
+# is in another resource group, also grant AcrPush on it).
+az role assignment create --assignee $APP_ID --role Contributor \
+  --scope /subscriptions/$SUB/resourceGroups/$RG
+
+# Trust tokens from the `production` environment of this repo. deploy.yml sets
+# `environment: production`, so the OIDC subject is environment-based.
+az ad app federated-credential create --id $APP_ID --parameters '{
+  "name": "github-production",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:lorist/ad_policy:environment:production",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+gh secret set AZURE_CLIENT_ID       --body "$APP_ID"
+gh secret set AZURE_TENANT_ID       --body "$TENANT"
+gh secret set AZURE_SUBSCRIPTION_ID --body "$SUB"
+```
+
+If the Web App or ACR names change, update the `env:` block at the top of
+`deploy.yml`.
+
+**2. Snyk.** Create a token at <https://app.snyk.io/account> (or use a service
+account token for the org), enable **Snyk Code** in the org settings, then:
+
+```bash
+gh secret set SNYK_TOKEN --body "<token>"
+```
+
+The security workflow fails the build on high or critical findings. Lower the
+bar with `--severity-threshold=medium` or ignore a specific issue with a
+`.snyk` policy file.
+
+**3. Optional: protect `production`.** In the repo's *Settings → Environments →
+production* you can require a reviewer before each deploy. The workflow will
+pause there and continue once approved.

@@ -208,3 +208,12 @@ def test_lookup_logs_never_contain_raw_identity(lookup, caplog, monkeypatch):
     }])
     lookup(caplog, conn=conn)
     assert "walter" not in caplog.text
+
+
+# --- /healthz: liveness with build version ---------------------------------
+
+def test_healthz_reports_version(monkeypatch):
+    monkeypatch.setattr(ad, "APP_VERSION", "abc1234")
+    resp = ad.app.test_client().get("/healthz")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"status": "ok", "version": "abc1234"}
