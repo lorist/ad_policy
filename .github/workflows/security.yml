@@ -1,0 +1,78 @@
+# Snyk scans: Python dependencies, source code (SAST), and the built container.
+# Findings are uploaded to GitHub code scanning (Security tab). On master the
+# project is also registered with Snyk ("monitor") so new CVEs in existing
+# dependencies are reported between commits. Needs the SNYK_TOKEN secret —
+# see DEPLOY.md under "CI/CD".
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to code scanning
+
+jobs:
+  snyk:
+    name: Snyk (deps, code, container)
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # Snyk resolves the pip dependency graph from the installed environment.
+      - run: pip install -r requirements.txt
+
+      - uses: snyk/actions/setup@v1.0.0
+
+      - name: Dependencies (requirements.txt)
+        id: deps
+        continue-on-error: true
+        run: >
+          snyk test --file=requirements.txt --package-manager=pip
+          --severity-threshold=high --sarif-file-output=sarif/snyk-deps.sarif
+
+      - name: Source code (Snyk Code)
+        id: code
+        continue-on-error: true
+        run: >
+          snyk code test --severity-threshold=high
+          --sarif-file-output=sarif/snyk-code.sarif
+
+      - name: Build image
+        run: docker build -t ad_policy:scan .
+
+      - name: Container image
+        id: container
+        continue-on-error: true
+        run: >
+          snyk container test ad_policy:scan --file=Dockerfile
+          --severity-threshold=high --sarif-file-output=sarif/snyk-container.sarif
+
+      - name: Upload results to GitHub code scanning
+        if: always() && hashFiles('sarif/*.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: sarif
+
+      - name: Register project with Snyk for continuous monitoring
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        run: |
+          snyk monitor --file=requirements.txt --package-manager=pip --project-name=ad_policy
+          snyk container monitor ad_policy:scan --file=Dockerfile --project-name=ad_policy-image
+
+      - name: Fail if any scan found high-severity issues
+        if: steps.deps.outcome == 'failure' || steps.code.outcome == 'failure' || steps.container.outcome == 'failure'
+        run: |
+          echo "deps=${{ steps.deps.outcome }} code=${{ steps.code.outcome }} container=${{ steps.container.outcome }}"
+          exit 1

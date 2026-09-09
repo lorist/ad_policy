@@ -54,6 +54,8 @@ LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "OU=People,DC=custom,DC=com")
 LDAP_PORT = int(os.getenv("LDAP_PORT", "636"))
 LDAP_USE_SSL = os.getenv("LDAP_USE_SSL", "true").lower() in ("1", "true", "yes")
 LDAP_VALIDATE_CERT = os.getenv("LDAP_VALIDATE_CERT", "false").lower() in ("1", "true", "yes")
+# Build identifier baked into the image (see Dockerfile ARG GIT_SHA).
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 
 tls_configuration = Tls(
     validate=ssl.CERT_REQUIRED if LDAP_VALIDATE_CERT else ssl.CERT_NONE,
@@ -132,8 +134,11 @@ logger.info('Starting pexavatar')
 def healthz():
     """Liveness probe: confirms the web server is up. Deliberately does not touch
     LDAP — use /healthz/ldap for dependency/readiness checks — so a DC outage
-    doesn't make orchestrators kill an otherwise-healthy container."""
-    return Response('{"status": "ok"}', status=200, mimetype="application/json")
+    doesn't make orchestrators kill an otherwise-healthy container.
+
+    Includes the build version so a deploy can verify the new image is live."""
+    body = json.dumps({"status": "ok", "version": APP_VERSION})
+    return Response(body, status=200, mimetype="application/json")
 
 
 @app.route('/policy/v1/participant/avatar/<participant>')

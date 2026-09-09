@@ -1,0 +1,16 @@
+# Keeps pinned dependencies, the base image, and the actions themselves current.
+# Snyk reports the vulnerabilities; Dependabot opens the PRs that fix them.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

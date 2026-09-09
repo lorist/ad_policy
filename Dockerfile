@@ -1,7 +1,11 @@
 FROM python:3.12-slim
 
+# Short git SHA of the build, surfaced by /healthz so a deploy can confirm the
+# image it just pushed is the one actually serving traffic.
+ARG GIT_SHA=dev
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_VERSION=$GIT_SHA
 
 WORKDIR /app
 
