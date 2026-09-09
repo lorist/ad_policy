@@ -1,0 +1,7 @@
+# Plain HTTP listener. Use this when TLS is terminated in front of the
+# container (Azure App Service, a load balancer) or for lab testing.
+server {
+    listen 80;
+    server_name _;
+    include /etc/nginx/conf.d/routes.inc;
+}

@@ -1,0 +1,12 @@
+# HTTPS listener. Only rendered when /etc/nginx/certs/fullchain.pem exists
+# (see docker-entrypoint.d/15-optional-tls.sh). Pexip must trust this
+# certificate: a self-signed one has to be uploaded under
+# Certificates > Trusted CA certificates on the Management Node.
+server {
+    listen 443 ssl;
+    server_name _;
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    include /etc/nginx/conf.d/routes.inc;
+}

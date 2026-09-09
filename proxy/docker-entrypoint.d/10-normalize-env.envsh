@@ -1,0 +1,21 @@
+#!/bin/sh
+# Sourced by the nginx entrypoint before the templates are rendered.
+
+# Upstream URLs must not end in "/" because $request_uri already starts with one.
+export MATTERMOST_POLICY_URL="${MATTERMOST_POLICY_URL%/}"
+export AVATAR_UPSTREAM_URL="${AVATAR_UPSTREAM_URL:-http://ad_policy:5000}"
+export AVATAR_UPSTREAM_URL="${AVATAR_UPSTREAM_URL%/}"
+
+# Resolver for the variable proxy_pass targets: whatever the container was
+# given (Docker's 127.0.0.11, Azure's 168.63.129.16, ...), unless overridden.
+if [ -z "$DNS_RESOLVER" ]; then
+    DNS_RESOLVER="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)"
+    export DNS_RESOLVER="${DNS_RESOLVER:-127.0.0.11}"
+fi
+
+if [ -z "$MATTERMOST_POLICY_URL" ]; then
+    echo "proxy: MATTERMOST_POLICY_URL is not set — service configuration requests will fail" >&2
+    export MATTERMOST_POLICY_URL="http://127.0.0.1:9"   # keeps nginx config valid; connection refused
+fi
+echo "proxy: service configuration -> $MATTERMOST_POLICY_URL"
+echo "proxy: participant avatars    -> $AVATAR_UPSTREAM_URL"
