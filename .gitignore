@@ -6,3 +6,4 @@ venv/
 logs/
 .venv/
 TROUBLESHOOTING.md
+.claude/
