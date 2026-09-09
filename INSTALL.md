@@ -55,6 +55,39 @@ If you turned on **Verify the domain controller's certificate**, copy the CA
 certificate that issued the DC's certificate to `certs/ad-ca.pem` first; the
 wizard checks it parses.
 
+### Getting a certificate from your own CA (for example AD Certificate Services)
+
+Instead of a self-signed certificate you can have your enterprise CA issue
+one. This is usually the best option: the Conferencing Nodes often trust the
+AD CA already, so nothing needs uploading to Pexip.
+
+```
+./setup.sh csr policy.example.com          # writes certs/proxy/request.csr
+```
+
+Submit `request.csr` for a **Web Server** certificate. With AD CS, from any
+domain-joined Windows machine:
+
+```
+certreq -submit -attrib "CertificateTemplate:WebServer" request.csr signed.cer
+```
+
+or paste it into the CA's web enrollment page (`https://<ca>/certsrv`, *Request
+a certificate > advanced certificate request*, template *Web Server*) and
+download the result as **Base 64 encoded**, plus *Download certificate chain*
+(`certnew.p7b`). Then:
+
+```
+./setup.sh install-cert signed.cer certnew.p7b
+```
+
+This checks the certificate matches the key, assembles `certs/proxy/fullchain.pem`
+with any intermediates, sets `TLS_MODE=provided`, and restarts the proxy if it
+is running. Renew the same way; the CSR reuses the existing key unless you
+pass `--new-key`. The CSR carries the hostname in its Subject Alternative Name,
+which AD CS honours when the template allows the subject to be supplied in the
+request (the default for *Web Server*).
+
 ## 3. Start and check
 
 ```
@@ -112,7 +145,8 @@ AD. Their photo should appear in the participant list.
 | Update to a new version | `git pull` then `docker compose up -d --build` |
 | Watch the logs | `docker compose logs -f` |
 | Stop / start | `docker compose down` / `docker compose up -d` |
-| Renew a provided certificate | replace the files in `certs/proxy/` then `docker compose restart proxy` |
+| Renew a CA-issued certificate | `./setup.sh csr` → submit → `./setup.sh install-cert <new cert>` |
+| Replace a provided certificate by hand | copy the files into `certs/proxy/` then `docker compose restart proxy` |
 
 Lookups are cached for five minutes (`AVATAR_CACHE_TTL`), so a photo added in
 AD can take that long to appear.

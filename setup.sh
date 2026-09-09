@@ -5,6 +5,8 @@
 #   ./setup.sh --advanced   also ask the advanced questions
 #   ./setup.sh check [id]   verify the running containers (optionally look up id)
 #   ./setup.sh cert         print the certificate to upload to Pexip
+#   ./setup.sh csr [name]   create a key + CSR to submit to your own CA (e.g. AD CS)
+#   ./setup.sh install-cert <cert> [chain]   install what the CA returned
 #
 # Needs Docker. Uses the host's python3 for the wizard when it is 3.8 or
 # newer, otherwise runs it in a throwaway python container.
@@ -15,6 +17,9 @@ case "${1:-}" in
   check)
     shift
     exec sh setup/check.sh "$@"
+    ;;
+  csr|install-cert)
+    exec sh setup/certs.sh "$@"
     ;;
   cert)
     f=certs/proxy/fullchain.pem
@@ -32,7 +37,7 @@ case "${1:-}" in
     cat "$f"
     ;;
   -h|--help|help)
-    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
     ;;
   *)
     if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'; then

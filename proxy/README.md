@@ -31,7 +31,9 @@ Pexip nodes ──► proxy (this) ──┬─► https://<mattermost>/plugins/
 Certificates live in `/etc/nginx/certs` (`fullchain.pem`, `privkey.pem`); the
 compose file mounts `certs/proxy/` there read-write so a generated certificate
 survives restarts. A self-signed certificate must be uploaded to Pexip under
-**Certificates > Trusted CA certificates**; `./setup.sh cert` prints it.
+**Certificates > Trusted CA certificates**; `./setup.sh cert` prints it. For a
+certificate from your own CA use `./setup.sh csr` and `./setup.sh install-cert`
+(see INSTALL.md).
 
 ## Run with Docker Compose (customer deployment)
 

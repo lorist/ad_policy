@@ -22,9 +22,14 @@ case "$MODE" in
       # SAN must say IP: for an address and DNS: for a name.
       if echo "$HOST" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then SAN="IP:$HOST"; else SAN="DNS:$HOST"; fi
       mkdir -p /etc/nginx/certs
-      openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
-        -keyout "$KEY" -out "$CERT" -subj "/CN=$HOST" -addext "subjectAltName=$SAN" 2>/dev/null
-      chmod 600 "$KEY"
+      # Keep an existing key: a CSR made with ./setup.sh csr may be waiting
+      # at the CA, and its certificate must still match this key later.
+      if [ ! -f "$KEY" ]; then
+        openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$KEY" 2>/dev/null
+        chmod 600 "$KEY"
+      fi
+      openssl req -x509 -key "$KEY" -sha256 -days 825 -out "$CERT" \
+        -subj "/CN=$HOST" -addext "subjectAltName=$SAN" 2>/dev/null
       echo "proxy: generated a self-signed certificate for $HOST"
       echo "proxy: upload certs/proxy/fullchain.pem to Pexip (Certificates > Trusted CA certificates)"
     fi
