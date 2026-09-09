@@ -24,12 +24,16 @@ two Docker containers:
 
 ## 1. Get the files
 
+Download the latest release archive from
+<https://github.com/lorist/ad_policy/releases>, unpack it and `cd` into it.
+Or, to follow updates with `git pull`:
+
 ```
 git clone https://github.com/lorist/ad_policy.git
 cd ad_policy
 ```
 
-(or unpack the release archive and `cd` into it).
+What changed between releases is in [CHANGELOG.md](CHANGELOG.md).
 
 ## 2. Answer the setup questions
 

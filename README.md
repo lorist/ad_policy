@@ -18,6 +18,8 @@ docker compose up -d --build
 
 Step-by-step instructions, including the Pexip side, are in
 [INSTALL.md](INSTALL.md). The questions come from [.env.example](.env.example).
+Releases and their notes: [GitHub Releases](https://github.com/lorist/ad_policy/releases),
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Configuration
 
