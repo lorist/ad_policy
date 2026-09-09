@@ -1,0 +1,50 @@
+# Shared routing for the Pexip policy front door (included by both the
+# HTTP and HTTPS server blocks).
+#
+# Pexip appends a fixed path per request type to the policy profile's base
+# URL. Each path is sent to the service that implements it; everything else
+# is a 404. Only "service configuration" and "participant avatar" should be
+# enabled in the profile.
+
+resolver ${DNS_RESOLVER} valid=30s ipv6=off;
+
+proxy_connect_timeout 2s;
+proxy_send_timeout    4s;
+proxy_read_timeout    4s;      # Pexip abandons a policy request after 5s
+proxy_http_version    1.1;
+proxy_ssl_server_name on;      # SNI when an upstream is https://
+
+# --- Mattermost plugin: service configuration only ------------------------
+# The Authorization header Pexip sends (the profile credentials) passes
+# through untouched; the Mattermost plugin validates it. $request_uri keeps
+# the query string and %-encoding exactly as sent.
+location = /policy/v1/service/configuration {
+    proxy_pass ${MATTERMOST_POLICY_URL}$request_uri;
+}
+
+# --- ad_policy: participant avatars ---------------------------------------
+# ad_policy has no authentication of its own, so the same profile
+# credentials are enforced here (POLICY_USER / POLICY_PASSWORD).
+location /policy/v1/participant/avatar/ {
+    auth_basic           "Pexip policy";
+    auth_basic_user_file /etc/nginx/pexip.htpasswd;
+    proxy_pass ${AVATAR_UPSTREAM_URL}$request_uri;
+}
+
+# ad_policy's LDAP connectivity probe, for operators (reveals the DC address,
+# hence behind the same credentials).
+location = /healthz/ldap {
+    auth_basic           "Pexip policy";
+    auth_basic_user_file /etc/nginx/pexip.htpasswd;
+    proxy_pass ${AVATAR_UPSTREAM_URL}$request_uri;
+}
+
+# Liveness of the proxy itself (no upstream involved).
+location = /healthz {
+    default_type application/json;
+    return 200 '{"status": "ok", "component": "proxy"}';
+}
+
+location / {
+    return 404;
+}

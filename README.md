@@ -48,6 +48,17 @@ Pushes to `master` are deployed automatically by GitHub Actions once CI passes,
 and every PR is scanned with Snyk. The one-time secrets setup is in
 [DEPLOY.md → CI/CD](DEPLOY.md#cicd-github-actions).
 
+## Combining with the Mattermost integration
+
+Pexip allows one external policy server per location, and the Mattermost
+integration is also a policy server. The optional `proxy` service routes each
+policy request type to the right backend so a single profile serves both. See
+[proxy/README.md](proxy/README.md).
+
+```
+docker compose --profile proxy up -d --build
+```
+
 ## Run locally (without Docker)
 
 ```
