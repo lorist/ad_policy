@@ -8,10 +8,21 @@ A Pexip external policy server that serves participant avatars by looking up the
 
 Point your Pexip policy profile at `http://<ip of policy>:5000`.
 
+## Install (Docker)
+
+```
+./setup.sh                      # answers -> .env
+docker compose up -d --build
+./setup.sh check <a user with a photo>
+```
+
+Step-by-step instructions, including the Pexip side, are in
+[INSTALL.md](INSTALL.md). The questions come from [.env.example](.env.example).
+
 ## Configuration
 
 Configuration is read from environment variables (a `.env` file is supported).
-Copy the example and edit it with your AD details:
+`./setup.sh` writes it for you; or copy the example and edit it by hand:
 
 ```
 cp .env.example .env
@@ -26,6 +37,7 @@ cp .env.example .env
 | `LDAP_PORT`          | LDAP port                       | `636`                        |
 | `LDAP_USE_SSL`       | Use LDAPS                        | `true`                       |
 | `LDAP_VALIDATE_CERT` | Validate the server certificate | `false`                      |
+| `LDAP_CA_CERT`       | CA file used when validating (compose mounts `certs/ad-ca.pem`) | system store |
 | `LOG_FILE`           | Log file path                   | `pexavatar.log`              |
 | `LOG_PII`            | Log raw participant identities (else hashed) | `false`         |
 | `AVATAR_CACHE_TTL`   | Lookup cache TTL in seconds (`0` disables) | `300`             |
@@ -38,26 +50,28 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-The service listens on port `5000`. Logs are written to `./logs`.
+This starts `ad_policy` (internal, port 5000 on the compose network only) and
+the `proxy` (ports 80/443), which is what Pexip talks to. Logs are written to
+`./logs` and to `docker compose logs`. Proxy settings (`POLICY_USER`,
+`POLICY_PASSWORD`, `TLS_MODE`, `PROXY_HOSTNAME`, `MATTERMOST_POLICY_URL`) are
+described in [.env.example](.env.example) and [proxy/README.md](proxy/README.md).
 
 ## Deploy to Azure
 
 To deploy to Azure App Service (Web App for Containers), see [DEPLOY.md](DEPLOY.md).
 
-Pushes to `master` are deployed automatically by GitHub Actions once CI passes,
+The Azure deployment is the lab/test setup; customers install with Docker per
+INSTALL.md. Pushes to `master` are deployed automatically by GitHub Actions once CI passes,
 and every PR is scanned with Snyk. The one-time secrets setup is in
 [DEPLOY.md → CI/CD](DEPLOY.md#cicd-github-actions).
 
 ## Combining with the Mattermost integration
 
 Pexip allows one external policy server per location, and the Mattermost
-integration is also a policy server. The optional `proxy` service routes each
-policy request type to the right backend so a single profile serves both. See
+integration is also a policy server. The `proxy` routes each policy request
+type to the right backend so a single profile serves both. Give the wizard the
+Mattermost policy URL and the plugin's credentials; details in
 [proxy/README.md](proxy/README.md).
-
-```
-docker compose --profile proxy up -d --build
-```
 
 ## Run locally (without Docker)
 

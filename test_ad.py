@@ -217,3 +217,27 @@ def test_healthz_reports_version(monkeypatch):
     resp = ad.app.test_client().get("/healthz")
     assert resp.status_code == 200
     assert resp.get_json() == {"status": "ok", "version": "abc1234"}
+
+
+# --- LDAPS certificate validation settings ----------------------------------
+
+def test_tls_validation_off_by_default():
+    import ssl
+    tls = ad.build_tls_configuration(validate_cert=False)
+    assert tls.validate == ssl.CERT_NONE
+
+
+def test_tls_validation_pins_ca_file_when_present(tmp_path):
+    import ssl
+    ca = tmp_path / "ad-ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    tls = ad.build_tls_configuration(validate_cert=True, ca_cert=str(ca))
+    assert tls.validate == ssl.CERT_REQUIRED
+    assert tls.ca_certs_file == str(ca)
+
+
+def test_tls_validation_falls_back_to_system_store(tmp_path):
+    import ssl
+    tls = ad.build_tls_configuration(validate_cert=True, ca_cert=str(tmp_path / "missing.pem"))
+    assert tls.validate == ssl.CERT_REQUIRED
+    assert tls.ca_certs_file is None

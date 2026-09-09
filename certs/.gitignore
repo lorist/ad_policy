@@ -1,0 +1,4 @@
+# Certificates live here and are never committed.
+*.pem
+*.crt
+*.key
