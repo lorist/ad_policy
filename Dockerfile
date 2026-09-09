@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Short git SHA of the build, surfaced by /healthz so a deploy can confirm the
 # image it just pushed is the one actually serving traffic.
