@@ -12,12 +12,14 @@ Point your Pexip policy profile at `http://<ip of policy>:5000`.
 
 ```
 ./setup.sh                      # answers -> .env
-docker compose up -d --build
+docker compose up -d            # pulls ghcr.io/lorist/ad_policy and ad_policy_proxy
 ./setup.sh check <a user with a photo>
 ```
 
 Step-by-step instructions, including the Pexip side, are in
 [INSTALL.md](INSTALL.md). The questions come from [.env.example](.env.example).
+Releases and their notes: [GitHub Releases](https://github.com/lorist/ad_policy/releases),
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Configuration
 
@@ -47,7 +49,13 @@ cp .env.example .env
 ## Run with Docker (recommended)
 
 ```
-docker compose up -d --build
+docker compose up -d
+```
+
+That pulls the released images. Developers build from the checkout with:
+
+```
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 This starts `ad_policy` (internal, port 5000 on the compose network only) and

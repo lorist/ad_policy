@@ -1,0 +1,13 @@
+# Build the images from this checkout instead of pulling the released ones.
+# For development, or when you have changed the code:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+services:
+  ad_policy:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+  proxy:
+    build: ./proxy

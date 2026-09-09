@@ -312,7 +312,7 @@ def summary(answers):
     print()
     print("Written .env. Next steps")
     print("------------------------")
-    print("1. Start the containers:      docker compose up -d --build")
+    print("1. Start the containers:      docker compose up -d")
     print("2. Check them:                ./setup.sh check [<a user with a photo>]")
     if answers.get("TLS_MODE") == "self-signed":
         print("3. Trust the certificate:     ./setup.sh cert  (upload it to Pexip under")
