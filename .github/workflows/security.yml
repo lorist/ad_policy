@@ -18,8 +18,30 @@ permissions:
   security-events: write   # upload SARIF to code scanning
 
 jobs:
+  # `secrets` can't be read in a job-level `if`, so a tiny gate job turns the
+  # token's presence into an output. Without the token the scans are skipped
+  # (run stays green) instead of failing on authentication.
+  gate:
+    name: Check Snyk token
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -n "$SNYK_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Snyk skipped::SNYK_TOKEN is not set. Add the repo secret to enable Snyk scanning (see DEPLOY.md, CI/CD)."
+          fi
+
   snyk:
     name: Snyk (deps, code, container)
+    needs: gate
+    if: needs.gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
