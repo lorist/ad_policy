@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from flask import Flask, json, request, Response, abort
 from ldap3 import Server, Connection, SUBTREE, Tls
 from ldap3.utils.conv import escape_filter_chars
+from ldap3.core.exceptions import LDAPException
 from PIL import Image, ImageOps
 
 load_dotenv()
@@ -208,6 +209,12 @@ def healthz_ldap():
     return Response(json.dumps(result), status=200, mimetype="application/json")
 
 
+class LookupFailed(Exception):
+    """The directory could not be asked (bind/socket error) or refused the
+    search (e.g. bad base DN). Distinct from a definitive "no such user / no
+    photo" answer: failures are logged as errors and are never cached."""
+
+
 def find_ad_users(participant):
     cached = cache_lookup(participant)
     if cached is not _MISS:
@@ -219,23 +226,67 @@ def find_ad_users(participant):
         abort(404)
     search, search_filter = match
 
+    who = redact(participant)
     logger.info('Search: %s, filter: %s', redact(search), search_filter)
-    with ldap_connection() as c:
+    try:
+        thumbnailPhoto = lookup_thumbnail(who, search, search_filter)
+    except LookupFailed as e:
+        # Don't cache: a transient DC outage or a misconfiguration shouldn't
+        # pin a 404 for this participant for AVATAR_CACHE_TTL seconds.
+        logger.error('LDAP lookup for %s failed: %s', who, e)
+        return None
+
+    cache_store(participant, thumbnailPhoto)
+    return thumbnailPhoto
+
+
+def lookup_thumbnail(who, search, search_filter):
+    """Bind, search, and return the base64-encoded thumbnailPhoto of the first
+    matching entry, or None when the directory answered but there is no such
+    user or the user has no photo. Each miss is logged with its reason.
+
+    Raises LookupFailed when the directory couldn't be asked at all."""
+    try:
+        conn = ldap_connection()
+    except LDAPException as e:
+        raise LookupFailed('bind to %s:%s as %s failed: %s: %s' % (
+            LDAP_HOST, LDAP_PORT, LDAP_USER, type(e).__name__, e))
+
+    with conn as c:
         try:
-            c.search(search_base=LDAP_BASE_DN,
-                     search_filter=search_filter.format(escape_filter_chars(search)),
-                     search_scope=SUBTREE,
-                     attributes=['thumbnailPhoto'])
-            ad = json.loads(c.response_to_json())
+            ok = c.search(search_base=LDAP_BASE_DN,
+                          search_filter=search_filter.format(escape_filter_chars(search)),
+                          search_scope=SUBTREE,
+                          attributes=['thumbnailPhoto'])
+        except LDAPException as e:
+            raise LookupFailed('search failed: %s: %s' % (type(e).__name__, e))
+        if not ok:
+            # ldap3 returns False instead of raising for server-side refusals,
+            # e.g. noSuchObject when LDAP_BASE_DN doesn't exist.
+            result = c.result or {}
+            raise LookupFailed('search under %s rejected: %s %s' % (
+                LDAP_BASE_DN, result.get('description'), result.get('message', '')))
 
-            thumbnailPhoto = ad['entries'][0]['attributes']['thumbnailPhoto']['encoded']
-            logger.debug('thumbnailPhoto: %s', thumbnailPhoto)
-            cache_store(participant, thumbnailPhoto)
-            return thumbnailPhoto
+        entries = json.loads(c.response_to_json()).get('entries') or []
 
-        except Exception:
-            cache_store(participant, None)
-            return None
+    if not entries:
+        logger.info('No directory entry matched %s under %s', who, LDAP_BASE_DN)
+        return None
+    if len(entries) > 1:
+        logger.info('%d directory entries matched %s; using the first', len(entries), who)
+
+    entry = entries[0]
+    photo = (entry.get('attributes') or {}).get('thumbnailPhoto')
+    # ldap3 encodes binary attributes as {"encoded": <base64>, ...} and returns
+    # [] for a requested attribute the entry doesn't have.
+    encoded = photo.get('encoded') if isinstance(photo, dict) else None
+    if not encoded:
+        logger.info('Directory entry %s matched %s but has no thumbnailPhoto',
+                    redact(entry.get('dn')), who)
+        return None
+
+    logger.debug('thumbnailPhoto: %s', encoded)
+    return encoded
 
 
 def searchFilter(participant):

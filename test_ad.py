@@ -98,3 +98,113 @@ def test_redact_hides_identity_by_default(monkeypatch):
 def test_redact_passthrough_when_enabled(monkeypatch):
     monkeypatch.setattr(ad, "LOG_PII", True)
     assert ad.redact("walter@example.com") == "walter@example.com"
+
+
+# --- find_ad_users: every miss says why, and only real answers are cached ---
+
+from ldap3.core.exceptions import LDAPBindError
+
+
+class FakeConnection:
+    """Stands in for ldap3.Connection: a context manager whose search() returns
+    `ok` and whose response_to_json() returns the canned `entries`."""
+
+    def __init__(self, entries=None, ok=True, result=None):
+        self.entries = entries or []
+        self.ok = ok
+        self.result = result or {}
+        self.search_kwargs = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def search(self, **kwargs):
+        self.search_kwargs = kwargs
+        return self.ok
+
+    def response_to_json(self):
+        import json
+        return json.dumps({"entries": self.entries})
+
+
+@pytest.fixture
+def lookup(monkeypatch):
+    """Clear the cache, enable it, and return a helper that installs a fake
+    connection (or a bind failure) and runs a lookup with INFO logs captured."""
+    monkeypatch.setattr(ad, "AVATAR_CACHE_TTL", 300)
+    ad._cache.clear()
+
+    def run(caplog, participant="walter@example.com", conn=None, bind_error=None):
+        def fake_ldap_connection():
+            if bind_error is not None:
+                raise bind_error
+            return conn
+
+        monkeypatch.setattr(ad, "ldap_connection", fake_ldap_connection)
+        with caplog.at_level("INFO", logger="pexavatar"):
+            return ad.find_ad_users(participant)
+
+    return run
+
+
+def test_lookup_returns_photo_and_caches_hit(lookup, caplog):
+    conn = FakeConnection(entries=[{
+        "dn": "CN=walter,OU=People,DC=test,DC=invalid",
+        "attributes": {"thumbnailPhoto": {"encoded": "QUJD"}},
+    }])
+    assert lookup(caplog, conn=conn) == "QUJD"
+    assert conn.search_kwargs["search_base"] == ad.LDAP_BASE_DN
+    assert ad.cache_lookup("walter@example.com") == "QUJD"
+
+
+def test_lookup_no_entry_logs_reason_and_caches_miss(lookup, caplog):
+    assert lookup(caplog, conn=FakeConnection(entries=[])) is None
+    assert "No directory entry matched" in caplog.text
+    assert ad.LDAP_BASE_DN in caplog.text
+    # a definitive "no such user" answer is cached as a miss (None, not _MISS)
+    assert ad.cache_lookup("walter@example.com") is None
+
+
+def test_lookup_entry_without_photo_logs_reason(lookup, caplog):
+    # ldap3 returns [] for a requested attribute the entry doesn't carry
+    conn = FakeConnection(entries=[{
+        "dn": "CN=walter,OU=People,DC=test,DC=invalid",
+        "attributes": {"thumbnailPhoto": []},
+    }])
+    assert lookup(caplog, conn=conn) is None
+    assert "has no thumbnailPhoto" in caplog.text
+    assert ad.cache_lookup("walter@example.com") is None
+
+
+def test_lookup_bind_failure_logs_error_and_is_not_cached(lookup, caplog):
+    err = LDAPBindError("automaticBindNotSuccessful: invalidCredentials")
+    assert lookup(caplog, bind_error=err) is None
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert errors, "bind failure must be logged at ERROR"
+    assert "bind to" in errors[0].getMessage()
+    assert "invalidCredentials" in errors[0].getMessage()
+    # a failure to ask the directory must not pin a 404 for the cache TTL
+    assert ad.cache_lookup("walter@example.com") is ad._MISS
+
+
+def test_lookup_rejected_search_logs_result_and_is_not_cached(lookup, caplog):
+    # e.g. a mistyped LDAP_BASE_DN: ldap3 returns False rather than raising
+    conn = FakeConnection(ok=False, result={"description": "noSuchObject",
+                                            "message": "0000208D: NameErr"})
+    assert lookup(caplog, conn=conn) is None
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert errors and "noSuchObject" in errors[0].getMessage()
+    assert ad.cache_lookup("walter@example.com") is ad._MISS
+
+
+def test_lookup_logs_never_contain_raw_identity(lookup, caplog, monkeypatch):
+    monkeypatch.setattr(ad, "LOG_PII", False)
+    conn = FakeConnection(entries=[{
+        "dn": "CN=walter kurtz,OU=People,DC=test,DC=invalid",
+        "attributes": {"thumbnailPhoto": []},
+    }])
+    lookup(caplog, conn=conn)
+    assert "walter" not in caplog.text
