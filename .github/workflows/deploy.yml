@@ -57,7 +57,7 @@ jobs:
       name: production
       url: https://ad-policy-avatar.azurewebsites.net/healthz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Azure login (OIDC)
         uses: azure/login@v3
