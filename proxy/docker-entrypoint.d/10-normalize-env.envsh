@@ -14,7 +14,7 @@ if [ -z "$DNS_RESOLVER" ]; then
 fi
 
 if [ -z "$MATTERMOST_POLICY_URL" ]; then
-    echo "proxy: MATTERMOST_POLICY_URL is not set — service configuration requests will fail" >&2
+    echo "proxy: Mattermost not configured — only participant avatar requests are served"
     export MATTERMOST_POLICY_URL="http://127.0.0.1:9"   # keeps nginx config valid; connection refused
 fi
 echo "proxy: service configuration -> $MATTERMOST_POLICY_URL"

@@ -47,3 +47,44 @@ jobs:
       - name: Container logs
         if: always()
         run: docker logs ad_policy || true
+
+  proxy-image:
+    name: Build proxy image and check TLS modes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t ad_policy_proxy:ci proxy/
+      - name: self-signed mode generates a certificate and serves both ports
+        run: |
+          mkdir -p certs
+          docker run -d --name proxy -p 8080:80 -p 8443:443 -v "$PWD/certs:/etc/nginx/certs" \
+            -e TLS_MODE=self-signed -e PROXY_HOSTNAME=policy.ci.test \
+            -e POLICY_USER=ci -e POLICY_PASSWORD=ci ad_policy_proxy:ci
+          for i in $(seq 1 15); do curl -fs http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fsk https://127.0.0.1:8443/healthz
+          test -f certs/fullchain.pem && test -f certs/privkey.pem
+          # unrelated policy path is refused, avatar path demands credentials
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/policy/v1/participant/properties)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/policy/v1/participant/avatar/x)" = 401
+          docker rm -f proxy
+      - name: provided mode refuses to start without a certificate
+        run: |
+          if docker run --rm -e TLS_MODE=provided -e POLICY_USER=ci -e POLICY_PASSWORD=ci ad_policy_proxy:ci; then
+            echo "should have refused"; exit 1; fi
+
+      - name: csr + install-cert round trip with a throwaway CA
+        run: |
+          rm -rf certs/proxy/*.pem
+          printf 'PROXY_HOSTNAME=policy.ci.test\nTLS_MODE=self-signed\nLDAP_HOST=dc\nLDAP_USER=u\nLDAP_PASSWORD=p\nLDAP_BASE_DN=DC=x\nPOLICY_USER=ci\nPOLICY_PASSWORD=ci\n' > .env
+          ./setup.sh csr policy.ci.test 10.0.0.5 | head -3
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/ca.key -out /tmp/ca.pem -subj "/CN=CI Test CA" -days 2
+          openssl x509 -req -in certs/proxy/request.csr -CA /tmp/ca.pem -CAkey /tmp/ca.key -CAcreateserial \
+            -out /tmp/signed.der -outform DER -days 2 -copy_extensions copy
+          ./setup.sh install-cert /tmp/signed.der /tmp/ca.pem
+          grep -q '^TLS_MODE=provided' .env
+          openssl x509 -in certs/proxy/fullchain.pem -noout -ext subjectAltName | grep -q 'policy.ci.test'
+          docker run -d --name proxy2 -p 8444:443 -v "$PWD/certs/proxy:/etc/nginx/certs" \
+            -e TLS_MODE=provided -e POLICY_USER=ci -e POLICY_PASSWORD=ci ad_policy_proxy:ci
+          for i in $(seq 1 15); do curl -fs --cacert /tmp/ca.pem --resolve policy.ci.test:8444:127.0.0.1 https://policy.ci.test:8444/healthz && break; sleep 1; done
+          curl -fs --cacert /tmp/ca.pem --resolve policy.ci.test:8444:127.0.0.1 https://policy.ci.test:8444/healthz
+          docker rm -f proxy2

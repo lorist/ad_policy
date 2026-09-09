@@ -1,24 +1,26 @@
+# ad_policy (avatar lookup) behind the proxy (TLS, auth, Mattermost routing).
+# Configure with ./setup.sh, start with `docker compose up -d --build`,
+# verify with ./setup.sh check. See INSTALL.md.
 services:
   ad_policy:
     build: .
     image: ad_policy:latest
     container_name: ad_policy
     restart: unless-stopped
-    ports:
-      - "5000:5000"
+    # Reachable only from the proxy on the compose network; not published.
+    expose:
+      - "5000"
     env_file:
       - .env
     environment:
-      - LOG_FILE=/app/logs/pexavatar.log
+      LOG_FILE: /app/logs/pexavatar.log
+      # Used only when LDAP_VALIDATE_CERT=true and the file exists.
+      LDAP_CA_CERT: /certs/ad-ca.pem
     volumes:
       - ./logs:/app/logs
+      - ./certs:/certs:ro
 
-  # Optional front door that lets ONE Pexip policy profile serve both the
-  # Mattermost plugin (service configuration) and ad_policy (avatars).
-  # Start with:  docker compose --profile proxy up -d --build
-  # See proxy/README.md.
   proxy:
-    profiles: ["proxy"]
     build: ./proxy
     image: ad_policy_proxy:latest
     container_name: ad_policy_proxy
@@ -26,16 +28,16 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    env_file:
-      - .env
+    # Only the proxy's own settings; it never sees the LDAP credentials.
     environment:
-      # Base URL of the Mattermost plugin's policy API, e.g.
-      # https://mattermost.example.com/plugins/com.pexip.pexip-app/api/
-      # The proxy logs a warning at startup if this is unset.
       MATTERMOST_POLICY_URL: ${MATTERMOST_POLICY_URL:-}
-      # Where avatar requests go. Default: the ad_policy container above.
-      AVATAR_UPSTREAM_URL: ${AVATAR_UPSTREAM_URL:-http://ad_policy:5000}
+      POLICY_USER: ${POLICY_USER:-}
+      POLICY_PASSWORD: ${POLICY_PASSWORD:-}
+      TLS_MODE: ${TLS_MODE:-self-signed}
+      PROXY_HOSTNAME: ${PROXY_HOSTNAME:-}
+      AVATAR_UPSTREAM_URL: http://ad_policy:5000
     volumes:
-      - ./proxy/certs:/etc/nginx/certs:ro
+      # Writable so TLS_MODE=self-signed can store the generated certificate.
+      - ./certs/proxy:/etc/nginx/certs
     depends_on:
       - ad_policy

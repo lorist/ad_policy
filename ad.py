@@ -54,12 +54,27 @@ LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "OU=People,DC=custom,DC=com")
 LDAP_PORT = int(os.getenv("LDAP_PORT", "636"))
 LDAP_USE_SSL = os.getenv("LDAP_USE_SSL", "true").lower() in ("1", "true", "yes")
 LDAP_VALIDATE_CERT = os.getenv("LDAP_VALIDATE_CERT", "false").lower() in ("1", "true", "yes")
+# CA certificate (PEM) that issued the domain controller's certificate. Only
+# consulted when LDAP_VALIDATE_CERT is on; when unset or missing, the system
+# CA store is used, which is right for a DC with a publicly trusted cert.
+LDAP_CA_CERT = os.getenv("LDAP_CA_CERT", "")
 # Build identifier baked into the image (see Dockerfile ARG GIT_SHA).
 APP_VERSION = os.getenv("APP_VERSION", "dev")
 
-tls_configuration = Tls(
-    validate=ssl.CERT_REQUIRED if LDAP_VALIDATE_CERT else ssl.CERT_NONE,
-)
+
+def build_tls_configuration(validate_cert=None, ca_cert=None):
+    """ldap3 Tls settings for LDAPS. Validation is off by default (lab-friendly);
+    with validation on, an existing CA file is pinned, else the system store."""
+    validate_cert = LDAP_VALIDATE_CERT if validate_cert is None else validate_cert
+    ca_cert = LDAP_CA_CERT if ca_cert is None else ca_cert
+    if not validate_cert:
+        return Tls(validate=ssl.CERT_NONE)
+    if ca_cert and os.path.exists(ca_cert):
+        return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_cert)
+    return Tls(validate=ssl.CERT_REQUIRED)
+
+
+tls_configuration = build_tls_configuration()
 
 # Participant identities (names, emails, phone numbers) are personal data. By
 # default they are redacted in logs to a short stable hash, which still lets you
@@ -265,10 +280,11 @@ def lookup_thumbnail(who, search, search_filter):
                           attributes=['thumbnailPhoto'])
         except LDAPException as e:
             raise LookupFailed('search failed: %s: %s' % (type(e).__name__, e))
-        if not ok:
-            # ldap3 returns False instead of raising for server-side refusals,
-            # e.g. noSuchObject when LDAP_BASE_DN doesn't exist.
-            result = c.result or {}
+        # ldap3 returns False both for a server-side refusal (e.g. noSuchObject
+        # when LDAP_BASE_DN doesn't exist) and for a successful search that
+        # matched nothing. Only the former is a failure.
+        result = c.result or {}
+        if not ok and result.get('description') != 'success':
             raise LookupFailed('search under %s rejected: %s %s' % (
                 LDAP_BASE_DN, result.get('description'), result.get('message', '')))
 

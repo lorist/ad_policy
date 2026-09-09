@@ -1,0 +1,7 @@
+# Certificates and requests live here and are never committed.
+*.pem
+*.crt
+*.cer
+*.key
+*.csr
+*.p7b

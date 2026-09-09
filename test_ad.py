@@ -190,6 +190,16 @@ def test_lookup_bind_failure_logs_error_and_is_not_cached(lookup, caplog):
     assert ad.cache_lookup("walter@example.com") is ad._MISS
 
 
+def test_lookup_empty_result_is_a_miss_not_a_failure(lookup, caplog):
+    # ldap3's search() returns False for "completed, zero entries" as well as
+    # for refusals; the result description tells them apart.
+    conn = FakeConnection(ok=False, entries=[], result={"description": "success", "message": ""})
+    assert lookup(caplog, conn=conn) is None
+    assert "No directory entry matched" in caplog.text
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    assert ad.cache_lookup("walter@example.com") is None   # cached as a definitive miss
+
+
 def test_lookup_rejected_search_logs_result_and_is_not_cached(lookup, caplog):
     # e.g. a mistyped LDAP_BASE_DN: ldap3 returns False rather than raising
     conn = FakeConnection(ok=False, result={"description": "noSuchObject",
@@ -217,3 +227,27 @@ def test_healthz_reports_version(monkeypatch):
     resp = ad.app.test_client().get("/healthz")
     assert resp.status_code == 200
     assert resp.get_json() == {"status": "ok", "version": "abc1234"}
+
+
+# --- LDAPS certificate validation settings ----------------------------------
+
+def test_tls_validation_off_by_default():
+    import ssl
+    tls = ad.build_tls_configuration(validate_cert=False)
+    assert tls.validate == ssl.CERT_NONE
+
+
+def test_tls_validation_pins_ca_file_when_present(tmp_path):
+    import ssl
+    ca = tmp_path / "ad-ca.pem"
+    ca.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    tls = ad.build_tls_configuration(validate_cert=True, ca_cert=str(ca))
+    assert tls.validate == ssl.CERT_REQUIRED
+    assert tls.ca_certs_file == str(ca)
+
+
+def test_tls_validation_falls_back_to_system_store(tmp_path):
+    import ssl
+    tls = ad.build_tls_configuration(validate_cert=True, ca_cert=str(tmp_path / "missing.pem"))
+    assert tls.validate == ssl.CERT_REQUIRED
+    assert tls.ca_certs_file is None
