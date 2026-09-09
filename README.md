@@ -1,5 +1,8 @@
 # ad_policy
 
+[![Deploy](https://github.com/lorist/ad_policy/actions/workflows/deploy.yml/badge.svg)](https://github.com/lorist/ad_policy/actions/workflows/deploy.yml)
+[![Security](https://github.com/lorist/ad_policy/actions/workflows/security.yml/badge.svg)](https://github.com/lorist/ad_policy/actions/workflows/security.yml)
+
 A Pexip external policy server that serves participant avatars by looking up the
 `thumbnailPhoto` attribute in Active Directory / LDAP.
 
@@ -41,6 +44,10 @@ The service listens on port `5000`. Logs are written to `./logs`.
 
 To deploy to Azure App Service (Web App for Containers), see [DEPLOY.md](DEPLOY.md).
 
+Pushes to `master` are deployed automatically by GitHub Actions once CI passes,
+and every PR is scanned with Snyk. The one-time secrets setup is in
+[DEPLOY.md → CI/CD](DEPLOY.md#cicd-github-actions).
+
 ## Run locally (without Docker)
 
 ```
@@ -60,9 +67,6 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover input classification, avatar-size clamping, and LDAP filter
-escaping, and do not require a live AD.
-
-
-
-
+The tests cover input classification, avatar-size clamping, LDAP filter
+escaping, the lookup's miss/failure handling (with a fake connection), and the
+health endpoint. They do not require a live AD.

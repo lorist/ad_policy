@@ -1,0 +1,79 @@
+# Builds the image in ACR and rolls it out to the App Service on every push to
+# master (after CI passes). Authenticates to Azure with OIDC — no stored
+# credentials. One-time setup is documented in DEPLOY.md under "CI/CD".
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for azure/login OIDC
+
+# Never run two production deploys at once; queue instead of cancelling so a
+# later commit still ships after the current rollout finishes.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: ad-policy-rg
+  AZURE_WEBAPP_NAME: ad-policy-avatar
+  ACR_NAME: adpolicyacr16427
+  IMAGE_NAME: ad_policy
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to Azure App Service
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ad-policy-avatar.azurewebsites.net/healthz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image in ACR
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          az acr build -r "$ACR_NAME" \
+            --build-arg GIT_SHA="$TAG" \
+            -t "$IMAGE_NAME:$TAG" -t "$IMAGE_NAME:latest" .
+
+      - name: Point the Web App at the new image and restart
+        run: |
+          # A unique tag per commit forces App Service to pull rather than
+          # reuse a cached :latest (see DEPLOY.md "Redeploying").
+          az webapp config container set -n "$AZURE_WEBAPP_NAME" -g "$AZURE_RESOURCE_GROUP" \
+            --container-image-name "$ACR_NAME.azurecr.io/$IMAGE_NAME:$TAG" \
+            --container-registry-url "https://$ACR_NAME.azurecr.io"
+          az webapp restart -n "$AZURE_WEBAPP_NAME" -g "$AZURE_RESOURCE_GROUP"
+
+      - name: Wait for the new version to answer /healthz
+        run: |
+          URL="https://$AZURE_WEBAPP_NAME.azurewebsites.net/healthz"
+          for i in $(seq 1 30); do
+            body=$(curl -s --max-time 10 "$URL" || true)
+            if echo "$body" | grep -q "\"version\": \"$TAG\""; then
+              echo "Live: $body"; exit 0
+            fi
+            echo "attempt $i: $body"; sleep 10
+          done
+          echo "The app never reported version $TAG — old image may still be running."
+          exit 1
+
+      - name: Check LDAP reachability from the deployed app
+        run: curl -fs --max-time 20 "https://$AZURE_WEBAPP_NAME.azurewebsites.net/healthz/ldap"
