@@ -12,7 +12,9 @@ two Docker containers:
 ## Before you start
 
 - A Linux host (or VM) with **Docker Engine 24+** and the **Docker Compose plugin**
-  (`docker compose version` works). 1 vCPU and 1 GB RAM are plenty.
+  (`docker compose version` works). 1 vCPU and 1 GB RAM are plenty. The host
+  pulls the two images from `ghcr.io`, so it needs outbound HTTPS to GitHub
+  (or build them locally, see below).
 - Network access from that host to a **domain controller on port 636** (LDAPS).
 - Network access from the **Pexip Conferencing Nodes to this host on port 443**
   (or 80 if something in front of it does TLS).
@@ -95,8 +97,17 @@ request (the default for *Web Server*).
 ## 3. Start and check
 
 ```
-docker compose up -d --build
+docker compose up -d
 ./setup.sh check
+```
+
+This pulls the released images `ghcr.io/lorist/ad_policy` and
+`ghcr.io/lorist/ad_policy_proxy`. To pin a version rather than follow
+`latest`, add `AD_POLICY_VERSION=1.0.0` to `.env`. To build from the source
+you downloaded instead (no registry access needed):
+
+```
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 `check` confirms both containers are up, the proxy answers on 80 and 443, the
@@ -146,7 +157,7 @@ AD. Their photo should appear in the participant list.
 | Task | Command |
 | --- | --- |
 | Change a setting | `./setup.sh` then `docker compose up -d` |
-| Update to a new version | `git pull` then `docker compose up -d --build` |
+| Update to a new version | `docker compose pull` then `docker compose up -d` (and `git pull` for new setup scripts and docs) |
 | Watch the logs | `docker compose logs -f` |
 | Stop / start | `docker compose down` / `docker compose up -d` |
 | Renew a CA-issued certificate | `./setup.sh csr` → submit → `./setup.sh install-cert <new cert>` |

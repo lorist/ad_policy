@@ -16,7 +16,9 @@ single-script version:
   self-signed and externally terminated TLS are the alternatives.
 - `INSTALL.md` walks through the whole install including the Pexip side.
 - Runs as two containers: `ad_policy` (internal only) behind the `proxy`
-  (TLS, credential check, routing).
+  (TLS, credential check, routing). Both are published to the GitHub
+  container registry on each release, so `docker compose up -d` pulls them;
+  `docker-compose.build.yml` builds from source instead.
 
 ### Mattermost
 - One Pexip policy profile can serve both the Mattermost plugin and avatar

@@ -1,10 +1,13 @@
 # ad_policy (avatar lookup) behind the proxy (TLS, auth, Mattermost routing).
-# Configure with ./setup.sh, start with `docker compose up -d --build`,
-# verify with ./setup.sh check. See INSTALL.md.
+# Configure with ./setup.sh, start with `docker compose up -d`, verify with
+# ./setup.sh check. See INSTALL.md.
+#
+# Images are pulled from the GitHub container registry. Pin a release with
+# AD_POLICY_VERSION=1.0.0 in .env (default: latest). To build from this
+# checkout instead, add -f docker-compose.build.yml (see that file).
 services:
   ad_policy:
-    build: .
-    image: ad_policy:latest
+    image: ghcr.io/${IMAGE_OWNER:-lorist}/ad_policy:${AD_POLICY_VERSION:-latest}
     container_name: ad_policy
     restart: unless-stopped
     # Reachable only from the proxy on the compose network; not published.
@@ -21,8 +24,7 @@ services:
       - ./certs:/certs:ro
 
   proxy:
-    build: ./proxy
-    image: ad_policy_proxy:latest
+    image: ghcr.io/${IMAGE_OWNER:-lorist}/ad_policy_proxy:${AD_POLICY_VERSION:-latest}
     container_name: ad_policy_proxy
     restart: unless-stopped
     ports:

@@ -51,7 +51,7 @@ PROXY_HOSTNAME=policy.example.com
 Then:
 
 ```
-docker compose up -d --build
+docker compose up -d
 ./setup.sh check
 ```
 

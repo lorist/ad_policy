@@ -26,7 +26,7 @@ for svc in ad_policy proxy; do
   case "$state" in
     running*healthy*|running\ ) ok "$svc is $state" ;;
     running*) ok "$svc is $state" ;;
-    "") bad "$svc is not running (docker compose up -d --build)" ;;
+    "") bad "$svc is not running (docker compose up -d)" ;;
     *) bad "$svc is $state" ;;
   esac
 done
