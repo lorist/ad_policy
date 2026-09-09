@@ -66,7 +66,12 @@ enabled request types differ.
 | AD avatars only | `https://<proxy>/` | same | participant avatar | every other location that should show AD photos |
 
 The second profile stops non-Mattermost locations from sending their
-unknown-alias service configuration requests to the Mattermost plugin. The
+unknown-alias service configuration requests to the Mattermost plugin.
+
+To give Mattermost meetings a specific theme (for example one with avatars
+enabled), add [`local_policy_mattermost_theme.jinja`](local_policy_mattermost_theme.jinja)
+as the profile's local service-configuration policy. It keys on the
+`service_tag` the plugin sets and leaves every other service untouched. The
 Mattermost **event sink** is configured separately and keeps pointing at
 Mattermost directly; it does not go through the proxy.
 

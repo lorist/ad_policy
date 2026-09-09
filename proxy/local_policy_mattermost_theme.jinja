@@ -1,0 +1,26 @@
+{# Local service-configuration policy for the Pexip policy profile that
+   fronts Mattermost + AD avatars (Call control > Policy profiles > Local
+   policy > Service configuration).
+
+   It runs on the Conferencing Node AFTER the external response has come back
+   from the proxy. For services the Mattermost plugin tagged "Mattermost" it
+   sets the theme (here "avatar_enabled" — must exist under Services > Themes);
+   anything else the external server returned passes through unchanged, and an
+   alias nothing matched is rejected.
+
+   Do not gate this on call_info.registered: Mattermost web-app participants
+   are never registered, so the theme would never apply. #}
+{
+    {{ pex_debug_log("Call information ", call_info) }}
+    {% if service_config and service_config.service_tag == "Mattermost" %}
+        {{ pex_debug_log("Service information ", service_config) }}
+        "action" : "continue",
+        "result" : {{ service_config | pex_update({"ivr_theme_name": "avatar_enabled"}) | pex_to_json }}
+    {% elif service_config %}
+        "action" : "continue",
+        "result" : {{ service_config | pex_to_json }}
+    {% else %}
+        "action" : "reject",
+        "result" : {}
+    {% endif %}
+}
