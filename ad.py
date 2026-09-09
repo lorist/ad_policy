@@ -280,10 +280,11 @@ def lookup_thumbnail(who, search, search_filter):
                           attributes=['thumbnailPhoto'])
         except LDAPException as e:
             raise LookupFailed('search failed: %s: %s' % (type(e).__name__, e))
-        if not ok:
-            # ldap3 returns False instead of raising for server-side refusals,
-            # e.g. noSuchObject when LDAP_BASE_DN doesn't exist.
-            result = c.result or {}
+        # ldap3 returns False both for a server-side refusal (e.g. noSuchObject
+        # when LDAP_BASE_DN doesn't exist) and for a successful search that
+        # matched nothing. Only the former is a failure.
+        result = c.result or {}
+        if not ok and result.get('description') != 'success':
             raise LookupFailed('search under %s rejected: %s %s' % (
                 LDAP_BASE_DN, result.get('description'), result.get('message', '')))
 
